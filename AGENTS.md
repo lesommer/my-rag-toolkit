@@ -22,6 +22,38 @@ file lists invariants and checklists only.
 - Every `ask` must keep printing the `[privacy] … sent N excerpt(s)` line, and
   usage logging to `rags/<name>/usage.jsonl` must be preserved.
 
+## GitHub confidentiality guardrails (critical)
+
+This repo is PUBLIC. Everything that reaches GitHub — tracked files, commit
+messages, branch/tag names, PR/issue text, release notes, repo description —
+is world-readable. Strictly ZERO reference there to the topic, identity or
+content of any real corpus processed with this tool:
+
+- Forbidden in any pushed artifact: real corpus or project names, committee
+  or institution names, session identifiers, researcher/person names,
+  laboratory names and numbers, real document filenames or titles, and any
+  excerpt, summary or query result derived from a real corpus.
+- All corpus state lives under `rags/` (gitignored, local-only): project
+  names, docs, indexes, usage logs. Keep `rags/` ignored forever; never
+  `git add -f` it; never reference its contents in tracked files. CLI outputs
+  (`rag list`, `rag status`, build reports, answers) carry corpus
+  identifiers — never paste them into commits, issues or docs.
+- Commit/PR messages describe toolkit changes only, never corpus activity.
+- Demo/test fixtures committed to the repo must remain fictional.
+- Asking for help on GitHub (issues, discussions): abstract the use case
+  ("a corpus of committee evaluation reports"), zero identifying detail.
+- The guardrail text itself stays generic — never write a real identifier
+  into this file or any tracked file (naming the actual terms would itself
+  be the leak).
+- Mechanical guard: `scripts/push-guard.sh` runs as a pre-push hook and
+  blocks pushes whose outgoing commits match the denylist at
+  `~/.config/myrag/push-guard-denylist.txt` — a LOCAL file, never committed,
+  holding the real identifiers of your corpora. Keep it current whenever a
+  new corpus project is created.
+- If a leak is found in local or pushed history: STOP, tell the owner
+  immediately. Remediation (history rewrite, repo privacy) is a human
+  decision, never performed unilaterally.
+
 ## Architecture invariants
 
 - Thin explicit pipeline (config → parse → chunk → embed → store → retrieve →
@@ -44,9 +76,11 @@ file lists invariants and checklists only.
 - `uv sync` — install/refresh the venv (Python 3.12 via uv).
 - `uv run pytest` — unit tests (model-free); `RUN_MODEL_TESTS=1` adds the live
   bge-m3 build+query test.
-- Demo corpus recipe: `/var/folders/.../opencode/make_demo_docs.py` script
-  pattern — generate FR/EN pdf/docx/md/txt fixtures, then
-  `rag init/add/build/ask`.
+- `scripts/push-guard.sh` — pre-push leak guard; install once per clone:
+  `cp scripts/push-guard.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push`.
+  Denylist lives at `~/.config/myrag/push-guard-denylist.txt` (local-only).
+- Demo/test corpora must be fictional (e.g. the FjordHydro-2027 sample):
+  generate FR/EN pdf/docx/md/txt fixtures locally, then `rag init/add/build/ask`.
 - Update the README (commands table, config reference, roadmap) whenever
   commands or defaults change.
 
