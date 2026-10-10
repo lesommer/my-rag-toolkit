@@ -72,6 +72,11 @@ content of any real corpus processed with this tool:
   must stay conservative — false-dropping legit repetitive text (meeting
   notes) is worse than keeping some noise. Current tuning: repeating-loop =
   50-char substring ≥ 5 non-overlapping repeats, text ≥ 250 chars.
+  Reference-block drops are per-project toggleable
+  (`chunk.drop_reference_blocks`, default true). PDF parsing extracts
+  bordered tables as markdown blocks (exempt from the digit-heavy filter)
+  and harvests clickable hyperlinks into a filter-exempt
+  `URLs in this document:` inventory block (`ParsedBlock.kind == "urls"`).
 
 ## Commands
 

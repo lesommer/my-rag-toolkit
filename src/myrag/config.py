@@ -25,6 +25,7 @@ class ChunkConfig:
     min_tokens: int = 80
     overlap_ratio: float = 0.05
     quality_min_tokens: int = 30
+    drop_reference_blocks: bool = True
 
 
 @dataclass

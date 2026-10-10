@@ -12,6 +12,7 @@ class ParsedBlock:
     text: str
     section: str = ""
     page: int = -1
+    kind: str = "text"
 
 
 @dataclass
@@ -77,6 +78,31 @@ def _recurring_lines(pages: list[str], n_pages: int) -> set[str]:
     return recurring
 
 
+def _table_markdown(rows: list) -> str | None:
+    clean: list[list[str]] = []
+    for row in rows:
+        cells = [re.sub(r"\s+", " ", c or "").strip() for c in row]
+        if any(cells):
+            clean.append(cells)
+    if len(clean) < 2:
+        return None
+    width = max(len(r) for r in clean)
+    lines = ["| " + " | ".join(clean[0] + [""] * (width - len(clean[0]))) + " |"]
+    lines.append("|" + "---|" * width)
+    for row in clean[1:]:
+        lines.append("| " + " | ".join(row + [""] * (width - len(row))) + " |")
+    return "\n".join(lines)
+
+
+def _rect_inside(outer: tuple, inner: tuple, tol: float = 2.0) -> bool:
+    return (
+        inner[0] >= outer[0] - tol
+        and inner[1] >= outer[1] - tol
+        and inner[2] <= outer[2] + tol
+        and inner[3] <= outer[3] + tol
+    )
+
+
 def _parse_pdf(path: Path) -> ParsedDocument:
     import pymupdf
 
@@ -84,39 +110,95 @@ def _parse_pdf(path: Path) -> ParsedDocument:
     meta = doc.metadata or {}
     title = (meta.get("title") or "").strip() or path.stem
     pages: list[str] = []
+    extras: list[list[ParsedBlock]] = []
+    url_entries: list[tuple[int, str, str]] = []
     scanned: list[int] = []
     empty: list[int] = []
     for i, page in enumerate(doc):
-        text = page.get_text("text") or ""
-        if len(text.strip()) < 20:
+        raw = page.get_text("text") or ""
+        if len(raw.strip()) < 20:
             if page.get_images(full=True):
                 scanned.append(i + 1)
             else:
                 empty.append(i + 1)
             pages.append("")
+            extras.append([])
             continue
-        pages.append(_clean_pdf_page(text))
+        table_rects: list[tuple] = []
+        page_extras: list[ParsedBlock] = []
+        try:
+            for tab in page.find_tables().tables:
+                try:
+                    md = _table_markdown(tab.extract())
+                except Exception:
+                    md = None
+                if md:
+                    table_rects.append(tuple(tab.bbox))
+                    page_extras.append(ParsedBlock(text=md, page=i + 1))
+        except Exception:
+            table_rects = []
+            page_extras = []
+        lines: list[str] = []
+        try:
+            for b in page.get_text("blocks"):
+                if len(b) < 5 or not str(b[4]).strip():
+                    continue
+                rect = (b[0], b[1], b[2], b[3])
+                if any(_rect_inside(tr, rect) for tr in table_rects):
+                    continue
+                lines.append(str(b[4]))
+        except Exception:
+            lines = [raw]
+        try:
+            for link in page.get_links():
+                uri = str(link.get("uri") or "")
+                if not uri.startswith(("http://", "https://")):
+                    continue
+                try:
+                    anchor = re.sub(r"\s+", " ", page.get_text("text", clip=link["from"])).strip()
+                except Exception:
+                    anchor = ""
+                url_entries.append((i + 1, uri, anchor[:80]))
+        except Exception:
+            pass
+        pages.append(_clean_pdf_page("\n".join(lines)))
+        extras.append(page_extras)
     n_pages = len(pages)
     doc.close()
 
     recurring = _recurring_lines(pages, n_pages)
     blocks: list[ParsedBlock] = []
     for i, page_text in enumerate(pages):
-        if not page_text:
-            continue
-        kept = []
-        for line in page_text.split("\n"):
-            stripped = line.strip()
-            if not stripped:
+        page_blocks: list[ParsedBlock] = []
+        if page_text:
+            kept = []
+            for line in page_text.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if _PAGE_NUMBER_RE.match(stripped):
+                    continue
+                if stripped in recurring:
+                    continue
+                kept.append(stripped)
+            body = "\n".join(kept).strip()
+            if body:
+                page_blocks.append(ParsedBlock(text=body, page=i + 1))
+        page_blocks.extend(extras[i])
+        blocks.extend(page_blocks)
+
+    if url_entries:
+        seen_urls: set[str] = set()
+        inv_lines = ["URLs in this document:"]
+        for page_no, uri, anchor in url_entries:
+            if uri in seen_urls:
                 continue
-            if _PAGE_NUMBER_RE.match(stripped):
-                continue
-            if stripped in recurring:
-                continue
-            kept.append(stripped)
-        body = "\n".join(kept).strip()
-        if body:
-            blocks.append(ParsedBlock(text=body, page=i + 1))
+            seen_urls.add(uri)
+            line = f"- p.{page_no}: {uri}"
+            if anchor:
+                line += f" [{anchor}]"
+            inv_lines.append(line)
+        blocks.append(ParsedBlock(text="\n".join(inv_lines), kind="urls"))
 
     return ParsedDocument(
         doc_id=path.name,

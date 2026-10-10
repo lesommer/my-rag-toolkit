@@ -80,6 +80,55 @@ def test_parse_pdf_with_scan_detection(tmp_path):
     assert any("internal wave mixing" in b.text for b in parsed.blocks)
 
 
+def _write_structured_pdf(path):
+    pymupdf = pytest.importorskip("pymupdf")
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_textbox(
+        pymupdf.Rect(72, 400, 500, 700),
+        "The FjordHydro campaign studies internal wave mixing in the fjord. " * 3,
+        fontsize=11,
+    )
+    cols = [72, 172, 272, 372]
+    rows = [72, 122, 172, 222]
+    for x in cols:
+        page.draw_line((x, rows[0]), (x, rows[-1]))
+    for y in rows:
+        page.draw_line((cols[0], y), (cols[-1], y))
+    cells = [["site", "depth", "instrument"], ["S1", "40 m", "CTD"], ["S2", "320 m", "mooring"]]
+    for r, row in enumerate(cells):
+        for c, val in enumerate(row):
+            page.insert_text((cols[c] + 4, rows[r] + 15), val, fontsize=10)
+    page.insert_text((72, 300), "Project website", fontsize=11)
+    page.insert_link(
+        {
+            "kind": pymupdf.LINK_URI,
+            "from": pymupdf.Rect(72, 288, 200, 305),
+            "uri": "https://fjordhydro.example.org",
+        }
+    )
+    pdf.save(str(path))
+    pdf.close()
+
+
+def test_parse_pdf_tables_and_links(tmp_path):
+    path = tmp_path / "structured.pdf"
+    _write_structured_pdf(path)
+    parsed = parse_file(path)
+    table_blocks = [b for b in parsed.blocks if b.text.startswith("| ")]
+    assert len(table_blocks) == 1
+    assert "| site | depth | instrument |" in table_blocks[0].text
+    assert "| S1 | 40 m | CTD |" in table_blocks[0].text
+    assert table_blocks[0].page == 1
+    stray = [b for b in parsed.blocks if "S1" in b.text and not b.text.startswith("| ")]
+    assert not stray
+    url_blocks = [b for b in parsed.blocks if b.kind == "urls"]
+    assert len(url_blocks) == 1
+    assert "URLs in this document:" in url_blocks[0].text
+    assert "- p.1: https://fjordhydro.example.org [Project website]" in url_blocks[0].text
+    assert any("internal wave mixing" in b.text for b in parsed.blocks if b.kind == "text")
+
+
 def test_parse_pdf_fully_scanned(tmp_path):
     pymupdf = pytest.importorskip("pymupdf")
     path = tmp_path / "scan.pdf"

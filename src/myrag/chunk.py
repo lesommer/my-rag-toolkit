@@ -210,6 +210,35 @@ def _group_blocks(doc: ParsedDocument):
     return groups
 
 
+def _emit_chunk(
+    doc: ParsedDocument, section: str, page: int, text: str, index: int, seen_hashes: set[str]
+) -> Chunk | None:
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()
+    if digest in seen_hashes:
+        return None
+    seen_hashes.add(digest)
+    prefix_parts = [f"Doc: {doc.title}"]
+    if section:
+        prefix_parts.append(f"Section: {section}")
+    if page and page > 0:
+        prefix_parts.append(f"Page: {page}")
+    prefix = "\n".join(prefix_parts) + "\n---\n"
+    text_with_prefix = prefix + text
+    return Chunk(
+        chunk_id=f"{doc.doc_id}__{digest[:12]}",
+        doc_id=doc.doc_id,
+        source_path=doc.source_path,
+        title=doc.title,
+        fmt=doc.fmt,
+        section=section,
+        page=page,
+        chunk_index=index,
+        token_count=count_tokens(text_with_prefix),
+        text=text,
+        text_with_prefix=text_with_prefix,
+    )
+
+
 def chunk_document(
     doc: ParsedDocument,
     *,
@@ -217,20 +246,27 @@ def chunk_document(
     min_tokens: int = 80,
     overlap_ratio: float = 0.05,
     quality_min_tokens: int = 30,
+    drop_reference_blocks: bool = True,
 ) -> list[Chunk]:
     chunks: list[Chunk] = []
     seen_hashes: set[str] = set()
 
     for section, blocks in _group_blocks(doc):
-        texts = []
-        for b in blocks:
-            t = b.text.strip()
-            if is_noise_text(t):
-                continue
-            texts.append(t)
+        kind = blocks[0].kind
+        texts = [b.text.strip() for b in blocks if b.text.strip()]
+        if kind != "urls":
+            texts = [t for t in texts if not is_noise_text(t)]
         if not texts:
             continue
         full = "\n\n".join(texts)
+
+        if kind == "urls":
+            for piece in chunk_text_block(full, max_tokens):
+                chunk = _emit_chunk(doc, section, blocks[0].page, piece, len(chunks), seen_hashes)
+                if chunk:
+                    chunks.append(chunk)
+            continue
+
         if count_tokens(full) < quality_min_tokens:
             continue
 
@@ -250,7 +286,7 @@ def chunk_document(
             if ct < quality_min_tokens:
                 continue
             if (
-                is_reference_block(rc)
+                (drop_reference_blocks and is_reference_block(rc))
                 or is_boilerplate(rc)
                 or is_digit_heavy(rc)
                 or is_affiliation_fragment(rc)
@@ -263,31 +299,7 @@ def chunk_document(
                 kept.append(rc)
 
         for text in kept:
-            digest = hashlib.md5(text.encode("utf-8")).hexdigest()
-            if digest in seen_hashes:
-                continue
-            seen_hashes.add(digest)
-            page = blocks[0].page
-            prefix_parts = [f"Doc: {doc.title}"]
-            if section:
-                prefix_parts.append(f"Section: {section}")
-            if page and page > 0:
-                prefix_parts.append(f"Page: {page}")
-            prefix = "\n".join(prefix_parts) + "\n---\n"
-            text_with_prefix = prefix + text
-            chunks.append(
-                Chunk(
-                    chunk_id=f"{doc.doc_id}__{digest[:12]}",
-                    doc_id=doc.doc_id,
-                    source_path=doc.source_path,
-                    title=doc.title,
-                    fmt=doc.fmt,
-                    section=section,
-                    page=page,
-                    chunk_index=len(chunks),
-                    token_count=count_tokens(text_with_prefix),
-                    text=text,
-                    text_with_prefix=text_with_prefix,
-                )
-            )
+            chunk = _emit_chunk(doc, section, blocks[0].page, text, len(chunks), seen_hashes)
+            if chunk:
+                chunks.append(chunk)
     return chunks

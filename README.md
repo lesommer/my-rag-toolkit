@@ -27,7 +27,9 @@ leave the machine; no US/cloud provider is involved anywhere.
 
 ## RAG in 60 seconds
 
-1. **Parse** each document into text (page numbers / sections kept as metadata).
+1. **Parse** each document into text (page numbers / sections kept as metadata;
+   PDF tables are extracted as markdown tables and clickable hyperlinks are
+   harvested into a per-document URL inventory).
 2. **Chunk** the text into ~1000-token passages with a small overlap.
 3. **Embed** each chunk into a 1024-dim vector with `bge-m3` — a multilingual
    open-source model that runs **locally** (Apple Silicon GPU). Vectors capture
@@ -81,6 +83,9 @@ evaluation panels, article corpora, or your notes database.
 ## Configuration (per project, `rags/<name>/config.yaml`)
 
 ```yaml
+chunk:
+  max_tokens: 1000             # ~1000-token passages
+  drop_reference_blocks: true  # drop DOI/reference-list chunks; set false to keep publication lists
 retrieve:
   top_k: 8                  # excerpts sent to the LLM
   score_threshold: 0.35     # min cosine similarity (keeps min_candidates anyway)

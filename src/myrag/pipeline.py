@@ -169,6 +169,7 @@ def build_project(home: Path, name: str, reset: bool = True, log=None) -> BuildR
             min_tokens=cfg.chunk.min_tokens,
             overlap_ratio=cfg.chunk.overlap_ratio,
             quality_min_tokens=cfg.chunk.quality_min_tokens,
+            drop_reference_blocks=cfg.chunk.drop_reference_blocks,
         )
         note = ""
         if parsed.scanned_pages:

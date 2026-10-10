@@ -131,6 +131,33 @@ def test_chunk_document_dedup():
     assert len(texts) == len(set(texts))
 
 
+def test_chunk_urls_inventory_survives_reference_filter():
+    refs = "\n".join(
+        f"- p.{i + 1}: https://doi.org/10.1234/fjord.{i} [FjordHydro paper {i}]"
+        for i in range(4)
+    )
+    doc = _make_doc(
+        fmt="pdf",
+        blocks=[ParsedBlock(text="URLs in this document:\n" + refs, kind="urls")],
+    )
+    chunks = chunk_document(doc)
+    assert len(chunks) == 1
+    assert "doi.org/10.1234/fjord.0" in chunks[0].text
+    assert chunks[0].page == -1
+
+
+def test_chunk_reference_blocks_flag():
+    refs = "\n".join(
+        f"Author{chr(65 + i)}, J., AuthorB, K., and AuthorC, L. (20{10 + i}). Title of paper {i}. Journal of Things, 1(2), 10.1234/abcd.{i}"
+        for i in range(5)
+    )
+    doc = _make_doc(fmt="pdf", blocks=[ParsedBlock(text=refs, page=1)])
+    assert chunk_document(doc, drop_reference_blocks=True) == []
+    kept = chunk_document(doc, drop_reference_blocks=False)
+    assert len(kept) == 1
+    assert "10.1234/abcd.0" in kept[0].text
+
+
 def test_chunk_document_pdf_page_tags():
     blocks = [
         ParsedBlock(
