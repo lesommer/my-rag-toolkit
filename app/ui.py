@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import streamlit as st
 
 from myrag import pipeline
-from myrag.config import default_home, index_dir, load_config, project_dir
+from myrag.config import apply_profile, default_home, index_dir, load_config, project_dir
 from myrag.store import index_stats, open_collection
 
 try:
@@ -54,9 +55,17 @@ with st.sidebar:
     except Exception:
         st.caption("index not built yet")
 
-    st.caption(f"generation: {cfg.generate.model} (Albert)")
+    profile_choice = None
+    if cfg.profiles:
+        options = ["(project default)"] + sorted(cfg.profiles)
+        profile_choice = st.selectbox("Answer model", options, key=f"answer-model-{selected}")
+    if profile_choice and profile_choice != "(project default)":
+        apply_profile(cfg, profile_choice)
+    host = urlparse(cfg.generate.base_url).netloc
+
+    st.caption(f"generation: {cfg.generate.model} @ {host}")
     use_llm = st.toggle(
-        "Answer with Albert",
+        f"Answer with {cfg.generate.model}",
         value=True,
         help="off = retrieval only, nothing leaves this machine",
     )
@@ -78,8 +87,8 @@ with st.sidebar:
     st.divider()
     st.caption(
         "**Privacy model** — documents, chunks and embeddings stay on this machine. "
-        "Only the selected excerpts + your question are sent to Albert "
-        "(`albert.api.etalab.gouv.fr`, DINUM) to generate the answer."
+        "Only the selected excerpts + your question are sent to the generation endpoint "
+        f"(`{host}`) to generate the answer."
     )
 
 st.header(f"{st.session_state.project}")
@@ -118,7 +127,14 @@ if prompt := st.chat_input("Ask about your documents..."):
         with st.spinner("Retrieving locally (local embeddings + local index)..."):
             try:
                 result = pipeline.query_project(
-                    home, st.session_state.project, prompt, use_llm=use_llm, top_k=top_k
+                    home,
+                    st.session_state.project,
+                    prompt,
+                    use_llm=use_llm,
+                    top_k=top_k,
+                    profile=profile_choice
+                    if profile_choice and profile_choice != "(project default)"
+                    else None,
                 )
             except Exception as exc:
                 st.error(f"query failed: {exc}")

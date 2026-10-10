@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -32,11 +33,19 @@ def build_user_message(question: str, contexts: list[Context]) -> str:
     return "\n\n".join(parts)
 
 
+_THINK_RE = re.compile(r"<think\b.*?(?:</think\s*>|\Z)", re.DOTALL)
+
+
+def _strip_think(text: str) -> str:
+    return _THINK_RE.sub("", text).strip()
+
+
 def generate_answer(
     question: str,
     contexts: list[Context],
     gcfg,
     usage_path: Path | None = None,
+    profile: str | None = None,
 ) -> tuple[str, dict]:
     api_key = os.environ.get(gcfg.api_key_env, "")
     if not api_key:
@@ -48,17 +57,22 @@ def generate_answer(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": build_user_message(question, contexts)},
     ]
+    kwargs = {}
+    if gcfg.extra_body:
+        kwargs["extra_body"] = gcfg.extra_body
     resp = client.chat.completions.create(
         model=gcfg.model,
         messages=messages,
         temperature=gcfg.temperature,
         max_tokens=gcfg.max_tokens,
+        **kwargs,
     )
-    answer = resp.choices[0].message.content or ""
+    answer = _strip_think(resp.choices[0].message.content or "")
     usage = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "model": gcfg.model,
         "base_url": gcfg.base_url,
+        "profile": profile,
         "prompt_tokens": getattr(resp.usage, "prompt_tokens", None),
         "completion_tokens": getattr(resp.usage, "completion_tokens", None),
         "contexts": len(contexts),

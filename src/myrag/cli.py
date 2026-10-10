@@ -23,7 +23,7 @@ from myrag.config import (
 from myrag.store import index_stats, open_collection
 
 app = typer.Typer(
-    help="my-rag-toolkit — local RAGs with sovereign Albert generation",
+    help="my-rag-toolkit — local-first RAG with sovereign generation (Albert by default)",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -115,16 +115,21 @@ def ask(
     question: list[str] = typer.Argument(..., help="question (quote it)"),
     top_k: int = typer.Option(None, "--top-k", help="number of excerpts to retrieve"),
     show_context: bool = typer.Option(False, "--show-context", help="print the retrieved excerpts"),
+    profile: str = typer.Option(
+        "", "--profile", help="generation profile from the project config (alternative endpoint/model)"
+    ),
     no_llm: bool = typer.Option(
-        False, "--no-llm", help="retrieval only — nothing is sent to Albert"
+        False, "--no-llm", help="retrieval only — nothing is sent to any API"
     ),
 ):
-    """Retrieve + answer a question (only top-k excerpts + question go to Albert)."""
+    """Retrieve + answer a question (only top-k excerpts + question leave the machine)."""
     _load_env()
     q = " ".join(question)
     try:
-        result = pipeline.query_project(_home(), name, q, use_llm=not no_llm, top_k=top_k)
-    except (FileNotFoundError, RuntimeError) as exc:
+        result = pipeline.query_project(
+            _home(), name, q, use_llm=not no_llm, top_k=top_k, profile=profile or None
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1)
     if not result.contexts:
@@ -232,6 +237,7 @@ def status(name: str):
         f"rerank={'on (' + cfg.retrieve.rerank.model + ')' if cfg.retrieve.rerank.enabled else 'off'}"
     )
     typer.echo(f"generate:  {cfg.generate.model} @ {cfg.generate.base_url}")
+    typer.echo(f"profiles:  {', '.join(sorted(cfg.profiles)) or '-'}")
     try:
         stats = index_stats(open_collection(name, index_dir(project)))
         typer.echo(f"index:     {stats['chunks']} chunks from {len(stats['documents'])} doc(s)")

@@ -9,6 +9,7 @@ from myrag.chunk import chunk_document
 from myrag.config import (
     SUPPORTED_EXTENSIONS,
     ProjectConfig,
+    apply_profile,
     default_home,
     docs_dir,
     index_dir,
@@ -211,9 +212,12 @@ def query_project(
     top_k: int | None = None,
     embedder=None,
     col=None,
+    profile: str | None = None,
 ) -> QueryResult:
     project = project_dir(home, name)
     cfg = load_config(project)
+    if profile:
+        apply_profile(cfg, profile)
     rcfg = cfg.retrieve
     if top_k:
         rcfg.top_k = top_k
@@ -237,7 +241,9 @@ def query_project(
             context_tokens=context_tokens,
         )
     usage_path = project / "usage.jsonl"
-    answer, usage = generate_answer(question, contexts, cfg.generate, usage_path=usage_path)
+    answer, usage = generate_answer(
+        question, contexts, cfg.generate, usage_path=usage_path, profile=profile
+    )
     return QueryResult(
         question=question,
         answer=answer,

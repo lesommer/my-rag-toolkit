@@ -6,10 +6,12 @@ file lists invariants and checklists only.
 ## Privacy invariants (critical)
 
 - **Egress policy**: the ONLY permitted network call on document-derived data
-  is the generation request to Albert (`generate.base_url`, default
-  `https://albert.api.etalab.gouv.fr/v1`) — question + top-k excerpts, nothing
-  else. Never add embeddings/reranking/OCR/API calls that ship chunk or
-  document text anywhere else.
+  is the generation request to the configured sovereign/institutional endpoint
+  (`generate.base_url`, default `https://albert.api.etalab.gouv.fr/v1`;
+  per-project `profiles:` may point at other sovereign/institutional
+  OpenAI-compatible endpoints) — question + top-k excerpts, nothing else.
+  Never add embeddings/reranking/OCR/API calls that ship chunk or document
+  text anywhere else.
 - **Local-only by construction**: parsing (pymupdf/python-docx), chunking,
   embeddings (sentence-transformers bge-m3), vector store (ChromaDB embedded)
   must stay local. Do not introduce cloud SDKs for retrieval.

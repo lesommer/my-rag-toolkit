@@ -49,6 +49,7 @@ class GenerateConfig:
     temperature: float = 0.2
     max_tokens: int = 2048
     api_key_env: str = "ALBERT_API_KEY"
+    extra_body: dict | None = None
 
 
 @dataclass
@@ -59,6 +60,7 @@ class ProjectConfig:
     chunk: ChunkConfig = field(default_factory=ChunkConfig)
     retrieve: RetrieveConfig = field(default_factory=RetrieveConfig)
     generate: GenerateConfig = field(default_factory=GenerateConfig)
+    profiles: dict[str, dict] = field(default_factory=dict)
 
 
 def default_home() -> Path:
@@ -119,6 +121,20 @@ def load_config(project: Path) -> ProjectConfig:
                         setattr(target.rerank, rk, rv)
             elif hasattr(target, key):
                 setattr(target, key, value)
+    raw_profiles = raw.get("profiles") or {}
+    cfg.profiles = {k: (v if isinstance(v, dict) else {}) for k, v in raw_profiles.items()}
+    return cfg
+
+
+def apply_profile(cfg: ProjectConfig, profile: str) -> ProjectConfig:
+    if profile not in cfg.profiles:
+        available = ", ".join(sorted(cfg.profiles)) or "none"
+        raise ValueError(f"unknown generate profile '{profile}' (defined: {available})")
+    gen = asdict(cfg.generate)
+    for key, value in cfg.profiles[profile].items():
+        if key in gen:
+            gen[key] = value
+    cfg.generate = GenerateConfig(**gen)
     return cfg
 
 
@@ -126,7 +142,8 @@ def save_config(project: Path, cfg: ProjectConfig) -> None:
     header = (
         "# my-rag-toolkit project configuration\n"
         "# Every project is an independent RAG: its own corpus, index and settings.\n"
-        "# Embeddings are always computed locally (bge-m3); only generation calls Albert.\n"
+        "# Embeddings are always computed locally (bge-m3); generation calls the\n"
+        "# configured sovereign endpoint (default: Albert).\n"
     )
     config_path(project).write_text(
         header + yaml.safe_dump(asdict(cfg), sort_keys=False, allow_unicode=True),

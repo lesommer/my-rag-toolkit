@@ -7,9 +7,11 @@ documents (< 100 docs per project), then query it from a CLI or a local web UI.
 **Privacy model (the design driver):** parsing, chunking, embeddings and the
 vector index all run **on your machine**. The *only* network egress is the final
 answer-generation call: the retrieved excerpts + your question go to the
-**Albert API** (`albert.api.etalab.gouv.fr`, operated by DINUM, the French
-State's digital directorate). Documents never leave the machine; no US/cloud
-provider is involved anywhere.
+**configured sovereign generation endpoint** — by default the **Albert API**
+(`albert.api.etalab.gouv.fr`, operated by DINUM, the French State's digital
+directorate). Alternative sovereign/institutional OpenAI-compatible endpoints
+can be configured per project via `profiles:` (see below). Documents never
+leave the machine; no US/cloud provider is involved anywhere.
 
 ```
                  LOCAL (your Mac)                        SOVEREIGN (Albert/DINUM)
@@ -69,7 +71,7 @@ evaluation panels, article corpora, or your notes database.
 | `rag init <name> [-d "…"]` | create a project |
 | `rag add <name> <files-or-dir>` | copy documents into the project |
 | `rag build <name> [--no-reset]` | (re)build the index — local embeddings; default = full rebuild |
-| `rag ask <name> "question"` | retrieve + Albert answer with citations (`--show-context`, `--top-k N`) |
+| `rag ask <name> "question"` | retrieve + answer with citations (`--show-context`, `--top-k N`, `--profile NAME`) |
 | `rag ask <name> "q" --no-llm` | retrieval only — **nothing leaves the machine** |
 | `rag search <name> "query"` | retrieval only (always local) |
 | `rag list` / `rag status <name>` | projects and index stats |
@@ -85,8 +87,17 @@ retrieve:
   rerank:
     enabled: false          # local bge-reranker-v2-m3 (extra ~2.3 GB download)
 generate:
-  model: gpt-oss-120b       # any Albert chat model (mistral-small-3.2-24b, …)
+  model: gpt-oss-120b       # default generation backend (any Albert chat model)
   base_url: https://albert.api.etalab.gouv.fr/v1
+  extra_body: null          # optional OpenAI extra body (model-specific flags)
+profiles:                   # named alternative backends — select with `rag ask <name> "q" --profile <name>`
+  institutional:
+    base_url: https://sovereign-llm.example.org/v1
+    model: qwen3-8-27b
+    api_key_env: INSTITUTIONAL_API_KEY
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
 embed:
   model: BAAI/bge-m3        # local; changing it requires a full rebuild
 ```
@@ -96,7 +107,7 @@ embed:
 | Data | Where it goes |
 |---|---|
 | Documents, parsed text, chunks, embeddings, index | **local only** (`rags/<name>/`) |
-| Question + top-k excerpts | **Albert only** at answer time (`albert.api.etalab.gouv.fr`) |
+| Question + top-k excerpts | **generation endpoint only** at answer time (default: `albert.api.etalab.gouv.fr`; per-project `profiles:` may point at another sovereign/institutional endpoint) |
 | API key | `ALBERT_API_KEY` env / `.env` — never committed, never printed |
 
 Other network contacts (no document data involved): one-time downloads of the
@@ -108,7 +119,7 @@ file), and pip packages at install time. Chroma telemetry is disabled
 `rags/<name>/usage.jsonl`.
 
 Manual audit while a command runs: `lsof -nP -iTCP -a -p <pid>` — you should
-only ever see `albert.api.etalab.gouv.fr` during `ask`.
+only ever see the configured generation endpoint's host during `ask`.
 
 ## Scan detection (OCR deferred to phase 2)
 
